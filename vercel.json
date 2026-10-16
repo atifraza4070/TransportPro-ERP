@@ -2,10 +2,10 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/api/index"
     },
     {
-      "source": "/((?!assets/|favicon.ico).*)*",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
