@@ -5,10 +5,10 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
-import { db } from './src/db/storage';
-import { generateInvoiceExcel } from './src/utils/excel-generator';
-import { calculateInvoiceTotals, validateInvoiceNumber } from './src/utils/billing-calculations';
-import type { UserProfile, UserRole } from './src/types';
+import { db } from '../src/db/storage';
+import { generateInvoiceExcel } from '../src/utils/excel-generator';
+import { calculateInvoiceTotals, validateInvoiceNumber } from '../src/utils/billing-calculations';
+import type { UserProfile, UserRole } from '../src/types';
 
 dotenv.config();
 
