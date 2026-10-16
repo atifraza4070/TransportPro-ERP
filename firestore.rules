@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(transporterId) {
+      return isSignedIn() && request.auth.uid == transporterId;
+    }
+
+    // Transporter profile
+    match /transporters/{transporterId} {
+      allow get: if isOwner(transporterId);
+      allow list: if false;
+      allow create: if isOwner(transporterId);
+      allow update: if isOwner(transporterId);
+      allow delete: if false;
+
+      // Invoices subcollection: strict owner isolation
+      match /invoices/{invoiceId} {
+        allow get: if isOwner(transporterId);
+        allow list: if isOwner(transporterId);
+        allow create: if isOwner(transporterId);
+        allow update: if isOwner(transporterId);
+        allow delete: if isOwner(transporterId);
+      }
+
+      // Freight rates subcollection
+      match /freightRates/{rateId} {
+        allow get: if isOwner(transporterId);
+        allow list: if isOwner(transporterId);
+        allow create: if isOwner(transporterId);
+        allow update: if isOwner(transporterId);
+        allow delete: if isOwner(transporterId);
+      }
+    }
+  }
+}

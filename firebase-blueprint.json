@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered transporter account or platform administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "companyName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "ntn": { "type": "string" },
+        "strn": { "type": "string" },
+        "role": { "type": "string", "enum": ["transporter", "admin"] },
+        "accountStatus": { "type": "string", "enum": ["active", "suspended", "deactivated"] }
+      },
+      "required": ["email", "fullName", "companyName", "role"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Itemized transport billing sheet with freight, halting, and provincial sales tax",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "transporterId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "invoiceDate": { "type": "string" },
+        "customerName": { "type": "string" },
+        "subTotal": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["unpaid", "paid", "partial"] }
+      },
+      "required": ["transporterId", "invoiceNumber", "customerName", "subTotal", "grandTotal"]
+    },
+    "FreightRate": {
+      "title": "FreightRate",
+      "description": "Customer agreed contract rate or general city fleet tariff",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "transporterId": { "type": "string" },
+        "destination": { "type": "string" },
+        "rate20ft": { "type": "number" },
+        "rate40ft": { "type": "number" }
+      },
+      "required": ["transporterId", "destination"]
+    }
+  },
+  "firestore": {
+    "/transporters/{transporterId}": {
+      "schema": "UserProfile",
+      "description": "Transporter company root document"
+    },
+    "/transporters/{transporterId}/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Transporter isolated invoices"
+    },
+    "/transporters/{transporterId}/freightRates/{rateId}": {
+      "schema": "FreightRate",
+      "description": "Transporter isolated freight rates"
+    }
+  }
+}

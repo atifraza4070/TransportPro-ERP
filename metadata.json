@@ -1,0 +1,8 @@
+{
+  "name": "Fleet Bill 3.0",
+  "description": "Professional Transport Billing Software & Freight Management System with Multi-Transporter Isolation, Freight Rate Engine, and Excel Invoicing",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
