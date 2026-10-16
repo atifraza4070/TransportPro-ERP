@@ -1182,29 +1182,24 @@ app.post('/api/admin/smtp/test', authenticateToken, requireAdmin, async (req: Au
 });
 
 // ---------------- VITE MIDDLEWARE / STATIC ASSETS ----------------
+// Production / Serverless Export
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Fatal server startup failure:', err);
+  });
+}
+
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(process.cwd(), 'dist');
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get('*', (_req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
-    }
-  }
+  const { createServer: createViteServer } = await import('vite');
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: 'spa',
+  });
+  app.use(vite.middlewares);
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Fleet Bill 3.0 Server running at http://localhost:${PORT}`);
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal server startup failure:', err);
-});
+export default app;
