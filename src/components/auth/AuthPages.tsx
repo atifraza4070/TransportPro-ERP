@@ -21,7 +21,25 @@ import {
 export const AuthPages: React.FC = () => {
   const { login, register } = useAuth();
 
-  const [tab, setTab] = useState<'login' | 'register' | 'admin'>('login');
+  // Check if opened via dedicated Super Admin portal URL (?admin=true, #admin, /admin)
+  const checkIsAdminPortal = () => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.toLowerCase();
+    const path = window.location.pathname.toLowerCase();
+    return (
+      params.get('admin') === 'true' ||
+      params.get('portal') === 'admin' ||
+      params.has('admin') ||
+      hash === '#admin' ||
+      path.startsWith('/admin')
+    );
+  };
+
+  const [isAdminPortal, setIsAdminPortal] = useState(checkIsAdminPortal);
+  const [tab, setTab] = useState<'login' | 'register' | 'admin'>(() => {
+    return checkIsAdminPortal() ? 'admin' : 'login';
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -82,6 +100,26 @@ export const AuthPages: React.FC = () => {
     }
     return () => clearInterval(timer);
   }, [forgotCooldown]);
+
+  // Keep portal view in sync with URL
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const isAdmin = checkIsAdminPortal();
+      setIsAdminPortal(isAdmin);
+      if (isAdmin) {
+        setTab('admin');
+      } else if (tab === 'admin') {
+        setTab('login');
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, [tab]);
 
   // LOGIN HANDLER
   const handleLogin = async (e: React.FormEvent) => {
@@ -331,74 +369,99 @@ export const AuthPages: React.FC = () => {
 
       {/* Header Branding */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center z-10 px-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-700 via-blue-600 to-cyan-400 mx-auto flex items-center justify-center shadow-xl shadow-blue-600/30 mb-4 border border-blue-400/30">
-          <Truck className="w-7 h-7 text-white" />
-        </div>
-        <div className="flex items-center justify-center gap-2">
-          <h1 className="text-3xl font-black tracking-tight text-white">Fleet Bill</h1>
-          <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/30">
-            3.0
-          </span>
-        </div>
-        <p className="mt-2 text-xs sm:text-sm text-slate-400 font-medium">
-          Enterprise Transport Billing & Freight Management System
-        </p>
+        {isAdminPortal ? (
+          <>
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 mx-auto flex items-center justify-center shadow-xl shadow-amber-600/30 mb-4 border border-amber-400/30">
+              <ShieldCheck className="w-7 h-7 text-white" />
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              <h1 className="text-3xl font-black tracking-tight text-white">Super Admin HQ</h1>
+              <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                Restricted
+              </span>
+            </div>
+            <p className="mt-2 text-xs sm:text-sm text-slate-400 font-medium">
+              Official Transporter Oversight, Subscriptions & Pricing Control
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-700 via-blue-600 to-cyan-400 mx-auto flex items-center justify-center shadow-xl shadow-blue-600/30 mb-4 border border-blue-400/30">
+              <Truck className="w-7 h-7 text-white" />
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              <h1 className="text-3xl font-black tracking-tight text-white">Fleet Bill</h1>
+              <span className="px-2 py-0.5 text-xs font-bold rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                3.0
+              </span>
+            </div>
+            <p className="mt-2 text-xs sm:text-sm text-slate-400 font-medium">
+              Transporter Billing & Freight Management Portal
+            </p>
+          </>
+        )}
       </div>
 
       {/* Main Authentication Card */}
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-lg z-10 px-4">
         <div className="bg-slate-900/90 backdrop-blur-xl py-8 px-6 sm:px-10 shadow-2xl rounded-2xl border border-slate-800">
           
-          {/* Navigation Tabs */}
+          {/* Navigation Tabs (Only rendered on Transporter Portal - Super Admin is completely isolated) */}
           {!showForgot && !regPendingEmail && (
-            <div className="grid grid-cols-3 rounded-xl bg-slate-950 p-1 mb-6 border border-slate-800 gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('login');
-                  setError(null);
-                  setSuccessMsg(null);
-                }}
-                className={`py-2 px-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all text-center truncate ${
-                  tab === 'login'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Transporter Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('register');
-                  setError(null);
-                  setSuccessMsg(null);
-                }}
-                className={`py-2 px-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all text-center truncate ${
-                  tab === 'register'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                New Registration
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('admin');
-                  setError(null);
-                  setSuccessMsg(null);
-                }}
-                className={`py-2 px-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 truncate ${
-                  tab === 'admin'
-                    ? 'bg-amber-600 text-white shadow-sm'
-                    : 'text-amber-400/90 hover:text-amber-300'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Super Admin</span>
-              </button>
-            </div>
+            isAdminPortal ? (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl mb-6 flex items-center justify-between text-xs text-amber-300">
+                <div className="flex items-center gap-2 font-bold">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>Super Administrator Access</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdminPortal(false);
+                    setTab('login');
+                    if (typeof window !== 'undefined') {
+                      window.history.pushState({}, '', '/');
+                    }
+                  }}
+                  className="text-[11px] text-amber-400 hover:text-amber-200 underline font-medium cursor-pointer"
+                >
+                  Switch to Transporter
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 rounded-xl bg-slate-950 p-1 mb-6 border border-slate-800 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('login');
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className={`py-2 px-2 text-xs font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    tab === 'login'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Transporter Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('register');
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className={`py-2 px-2 text-xs font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    tab === 'register'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  New Registration
+                </button>
+              </div>
+            )
           )}
 
           {/* Feedback Messages */}
@@ -540,11 +603,27 @@ export const AuthPages: React.FC = () => {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full mt-2 py-3 px-4 rounded-xl text-sm font-bold text-white bg-amber-600 hover:bg-amber-500 shadow-lg shadow-amber-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl text-sm font-bold text-white bg-amber-600 hover:bg-amber-500 shadow-lg shadow-amber-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4" />
                 <span>{submitting ? 'Verifying Admin Authority...' : 'Sign In as Super Admin'}</span>
               </button>
+
+              <div className="pt-3 text-center border-t border-slate-800/80 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdminPortal(false);
+                    setTab('login');
+                    if (typeof window !== 'undefined') {
+                      window.history.pushState({}, '', '/');
+                    }
+                  }}
+                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  ← Return to Transporter Portal
+                </button>
+              </div>
             </form>
           )}
 
@@ -891,6 +970,10 @@ export const AuthPages: React.FC = () => {
             </form>
           )}
 
+        </div>
+
+        <div className="mt-6 text-center text-xs text-slate-500 flex flex-col items-center gap-1">
+          <p>© {new Date().getFullYear()} Fleet Bill 3.0 · Dedicated Freight & Transport Billing</p>
         </div>
       </div>
     </div>
