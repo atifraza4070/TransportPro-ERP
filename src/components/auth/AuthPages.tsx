@@ -151,6 +151,15 @@ export const AuthPages: React.FC = () => {
     setSubmitting(false);
   };
 
+  const safeParseJson = async (res: Response): Promise<any> => {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: `Server responded with status ${res.status}. Please try again.` };
+    }
+  };
+
   // REGISTRATION HANDLER
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,42 +177,20 @@ export const AuthPages: React.FC = () => {
 
     setSubmitting(true);
     try {
-      // Call register API
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName,
-          companyName,
-          mobile,
-          email,
-          address,
-          city,
-          password: regPassword,
-        }),
+      const result = await register({
+        fullName,
+        companyName,
+        mobile,
+        email,
+        address,
+        city,
+        password: regPassword,
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Registration failed.');
+      if (!result.success) {
+        setError(result.error || 'Registration failed.');
         setSubmitting(false);
         return;
-      }
-
-      if (data.pendingVerification) {
-        setRegPendingEmail(email);
-        setResendCooldown(60);
-        if (data.previewCode) {
-          setRegPreviewOtp(data.previewCode);
-          setVerificationOtp(data.previewCode);
-          setSuccessMsg(`Verification code generated: ${data.previewCode}`);
-        } else {
-          setSuccessMsg(`Verification code sent to ${email}. Please enter the 6-digit OTP code below.`);
-        }
-      } else if (data.token && data.user) {
-        // Direct activation
-        localStorage.setItem('fleetbill_token', data.token);
-        window.location.reload();
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during registration.');
@@ -232,7 +219,7 @@ export const AuthPages: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (!res.ok) {
         setError(data.error || 'Verification failed. Incorrect or expired code.');
         setSubmitting(false);
@@ -262,7 +249,7 @@ export const AuthPages: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: regPendingEmail }),
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (res.ok) {
         setResendCooldown(60);
         if (data.previewCode) {
@@ -295,7 +282,7 @@ export const AuthPages: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail.trim() }),
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (res.ok) {
         setForgotStep('otp_reset');
         setForgotCooldown(60);
@@ -342,7 +329,7 @@ export const AuthPages: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (res.ok) {
         setSuccessMsg('Your password has been reset successfully! You can now sign in.');
         setTimeout(() => {
@@ -965,7 +952,7 @@ export const AuthPages: React.FC = () => {
               </div>
 
               <p className="text-[11px] text-slate-400 text-center pt-2">
-                By registering, a verification OTP code will be sent to your email to verify account ownership.
+                New transporter accounts require Super Admin approval before accessing billing modules.
               </p>
             </form>
           )}

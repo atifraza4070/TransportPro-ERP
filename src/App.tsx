@@ -14,18 +14,28 @@ import { SubscriptionPage } from './components/subscription/SubscriptionPage';
 import { SuperAdminPanel } from './components/admin/SuperAdminPanel';
 import { AuthPages } from './components/auth/AuthPages';
 import type { Invoice } from './types';
-import { AlertTriangle, CreditCard } from 'lucide-react';
+import { AlertTriangle, Clock, ShieldAlert, RefreshCw, LogOut, Building2, Mail, Phone } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { user, loading, isSuperAdmin } = useAuth();
+  const { user, loading, isSuperAdmin, refreshUser, logout } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('invoices');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
 
   useEffect(() => {
     if (isSuperAdmin && currentTab === 'invoices') {
       setCurrentTab('admin');
     }
   }, [isSuperAdmin]);
+
+  // Auto-poll status when transporter is waiting for approval or disabled
+  useEffect(() => {
+    if (!user || user.role === 'admin' || user.accountStatus === 'active') return;
+    const interval = setInterval(() => {
+      refreshUser();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [user, refreshUser]);
 
   // Invoices sub-navigation
   const [invoiceView, setInvoiceView] = useState<'list' | 'create' | 'edit' | 'print'>('list');
@@ -44,6 +54,125 @@ const MainAppContent: React.FC = () => {
 
   if (!user) {
     return <AuthPages />;
+  }
+
+  // Gate 1: Transporter Waiting for Super Admin Approval
+  if (user.role !== 'admin' && user.accountStatus === 'pending') {
+    const handleCheckNow = async () => {
+      setCheckingStatus(true);
+      await refreshUser();
+      setTimeout(() => setCheckingStatus(false), 600);
+    };
+
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4">
+        <div className="max-w-lg w-full bg-slate-900 border border-amber-500/30 rounded-2xl shadow-2xl p-6 sm:p-8 text-center space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center mx-auto">
+            <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Pending Super Admin Approval
+            </span>
+            <h1 className="text-2xl font-black tracking-tight text-white">
+              Waiting for Administrator Approval
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              Your transporter account has been registered and is awaiting approval from the System Administrator. Once approved in the Super Admin Control Center, your billing dashboard will unlock automatically.
+            </p>
+          </div>
+
+          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 text-left space-y-2.5 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-blue-400" /> Company Name
+              </span>
+              <span className="font-bold text-white">{user.companyName}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-blue-400" /> Registered Email
+              </span>
+              <span className="font-medium text-slate-200">{user.email}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-blue-400" /> Mobile Number
+              </span>
+              <span className="font-mono text-slate-200">{user.mobile}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={handleCheckNow}
+              disabled={checkingStatus}
+              className="flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-4 h-4 ${checkingStatus ? 'animate-spin' : ''}`} />
+              <span>{checkingStatus ? 'Checking Approval Status...' : 'Check Approval Status'}</span>
+            </button>
+            <button
+              onClick={logout}
+              className="py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Gate 2: Transporter Disabled / Suspended by Super Admin
+  if (user.role !== 'admin' && (user.accountStatus === 'suspended' || user.accountStatus === 'deactivated')) {
+    const handleCheckNow = async () => {
+      setCheckingStatus(true);
+      await refreshUser();
+      setTimeout(() => setCheckingStatus(false), 600);
+    };
+
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4">
+        <div className="max-w-lg w-full bg-slate-900 border border-rose-500/30 rounded-2xl shadow-2xl p-6 sm:p-8 text-center space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-8 h-8 text-rose-400" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+              Account Access Disabled
+            </span>
+            <h1 className="text-2xl font-black tracking-tight text-white">
+              Access Paused by Super Admin
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              Your transporter portal access ({user.companyName}) is currently disabled by the System Administrator. Once the Super Admin re-enables your account, click below to continue using the system.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              onClick={handleCheckNow}
+              disabled={checkingStatus}
+              className="flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-4 h-4 ${checkingStatus ? 'animate-spin' : ''}`} />
+              <span>{checkingStatus ? 'Checking Status...' : 'Check Status / Continue'}</span>
+            </button>
+            <button
+              onClick={logout}
+              className="py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const isExpired = user.role !== 'admin' && user.subscription?.status === 'expired';

@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import type {
@@ -34,14 +35,36 @@ interface DatabaseSchema {
   };
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+function resolveWritableDataDir(): string {
+  const localDir = path.resolve(process.cwd(), 'data');
+  if (!process.env.VERCEL) {
+    try {
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      const testFile = path.join(localDir, '.write_test');
+      fs.writeFileSync(testFile, 'ok', 'utf-8');
+      fs.unlinkSync(testFile);
+      return localDir;
+    } catch {
+      // Fallback to /tmp if current directory is read-only
+    }
+  }
+  const tmpDir = path.join(os.tmpdir(), 'fleetbill_data');
+  try {
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+  } catch {
+    // Ignore mkdir error in restricted environments
+  }
+  return tmpDir;
+}
+
+const DATA_DIR = resolveWritableDataDir();
 const DB_FILE = path.join(DATA_DIR, 'fleetbill_db.json');
 const BACKUP_FILE = path.join(DATA_DIR, 'fleetbill_db.backup.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+const BUNDLED_SEED_FILE = path.resolve(process.cwd(), 'data', 'fleetbill_db.json');
 
 function getInitialData(): DatabaseSchema {
   const adminSalt = bcrypt.genSaltSync(10);
@@ -366,8 +389,13 @@ class StorageEngine {
 
   private loadData(): DatabaseSchema {
     try {
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const sourceFile = fs.existsSync(DB_FILE)
+        ? DB_FILE
+        : fs.existsSync(BUNDLED_SEED_FILE)
+        ? BUNDLED_SEED_FILE
+        : null;
+      if (sourceFile) {
+        const raw = fs.readFileSync(sourceFile, 'utf-8');
         const loaded = JSON.parse(raw);
         if (!loaded.users.some((u: any) => u.email === 'atifraza4070@gmail.com')) {
           const salt = bcrypt.genSaltSync(10);

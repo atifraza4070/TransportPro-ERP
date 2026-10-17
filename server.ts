@@ -99,19 +99,31 @@ function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextF
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as { id: string; role: string };
-    const user = db.findUserById(payload.id);
+    const payload = jwt.verify(token, JWT_SECRET) as { id: string; role: string; email?: string; userSnapshot?: any };
+    let user = db.findUserById(payload.id);
+
+    if (!user && payload.email) {
+      user = db.findUserByEmailOrMobile(payload.email);
+    }
+
+    if (!user && payload.userSnapshot) {
+      db.createUser(payload.userSnapshot);
+      user = db.findUserById(payload.userSnapshot.id);
+    }
 
     if (!user) {
       return res.status(401).json({ error: 'User account not found.' });
     }
 
-    if (user.accountStatus === 'suspended') {
-      return res.status(403).json({ error: 'Your account is suspended. Please contact administrator.' });
-    }
+    const isProfileCheck = req.path === '/api/auth/me' || req.originalUrl?.includes('/api/auth/me');
 
-    if (user.accountStatus === 'deactivated') {
-      return res.status(403).json({ error: 'Your account has been deactivated.' });
+    if (!isProfileCheck && user.role !== 'admin') {
+      if (user.accountStatus === 'pending') {
+        return res.status(403).json({ error: 'Your account is waiting for Super Admin approval.' });
+      }
+      if (user.accountStatus === 'suspended' || user.accountStatus === 'deactivated') {
+        return res.status(403).json({ error: 'Your account has been disabled by the Super Admin.' });
+      }
     }
 
     const { passwordHash: _, ...safeUser } = user;
@@ -132,68 +144,96 @@ function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFuncti
 
 // ---------------- AUTH ROUTES ----------------
 app.post('/api/auth/register', async (req: Request, res: Response) => {
-  const { fullName, companyName, mobile, email, address, city, password } = req.body;
+  try {
+    const { fullName, companyName, mobile, email, address, city, password } = req.body || {};
 
-  if (!fullName || !companyName || !mobile || !email || !password) {
-    return res.status(400).json({ error: 'All required registration fields must be provided.' });
-  }
+    if (!fullName || !companyName || !mobile || !email || !password) {
+      return res.status(400).json({ error: 'All required registration fields must be provided.' });
+    }
 
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
-  }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    }
 
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanMobile = mobile.trim();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanMobile = String(mobile).trim();
 
-  const existing = db.findUserByEmailOrMobile(cleanEmail) || db.findUserByEmailOrMobile(cleanMobile);
-  if (existing) {
-    return res.status(409).json({ error: 'An account with this email or mobile number already exists.' });
-  }
+    const existing = db.findUserByEmailOrMobile(cleanEmail) || db.findUserByEmailOrMobile(cleanMobile);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email or mobile number already exists.' });
+    }
 
-  const salt = bcrypt.genSaltSync(10);
-  const passwordHash = bcrypt.hashSync(password, salt);
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(password, salt);
 
-  // Generate 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const now = Date.now();
-  const expiresAt = now + 15 * 60 * 1000; // 15 mins
+    const newTransporterId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date();
+    const trialExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  pendingRegistrations.set(cleanEmail, {
-    data: {
-      fullName: fullName.trim(),
-      companyName: companyName.trim(),
-      mobile: cleanMobile,
+    const userRecord = {
+      id: newTransporterId,
       email: cleanEmail,
-      address: address ? address.trim() : '',
-      city: city ? city.trim() : '',
+      mobile: cleanMobile,
+      fullName: String(fullName).trim(),
+      companyName: String(companyName).trim(),
+      address: address ? String(address).trim() : '',
+      city: city ? String(city).trim() : '',
+      ntn: '',
+      strn: '',
+      phone: cleanMobile,
+      role: 'transporter' as const,
+      accountStatus: 'pending' as const,
+      createdAt: now.toISOString(),
       passwordHash,
-    },
-    otp,
-    expiresAt,
-    lastSentAt: now,
-  });
+      subscription: {
+        plan: 'trial' as const,
+        status: 'pending_approval' as const,
+        startDate: now.toISOString().split('T')[0],
+        expiryDate: trialExpiry.toISOString().split('T')[0],
+        price: 0,
+      },
+      settings: {
+        defaultTaxRate: 15,
+        defaultTaxName: 'Punjab 15% Tex',
+        invoicePrefix: 'INV-26-',
+        currency: 'PKR',
+      },
+    };
 
-  // Dispatch OTP email
-  const emailResult = await sendSystemEmail(
-    cleanEmail,
-    `Your Fleet Bill 3.0 Verification Code: ${otp}`,
-    `Welcome to Fleet Bill 3.0!\n\nYour 6-digit email verification code is: ${otp}\n\nThis code will expire in 15 minutes. Please enter it to complete your transporter registration.\n\nIf you did not request this, please ignore this message.`
-  );
+    const newUser = db.createUser(userRecord);
 
-  return res.status(200).json({
-    pendingVerification: true,
-    message: `Verification code sent to ${cleanEmail}. Please enter the 6-digit OTP code to verify and activate your account.`,
-    previewCode: (emailResult && 'simulation' in emailResult && emailResult.simulation) ? otp : undefined,
-  });
+    db.logAudit(
+      newUser.id,
+      newUser.email,
+      'TRANSPORTER_REGISTERED',
+      `New transporter account registered for ${newUser.companyName} (Pending Super Admin Approval)`
+    );
+
+    const token = jwt.sign(
+      { id: newUser.id, role: newUser.role, email: newUser.email, userSnapshot: userRecord },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    return res.status(201).json({
+      user: newUser,
+      token,
+      pendingApproval: true,
+      message: 'Account registered successfully! Waiting for Super Admin approval.',
+    });
+  } catch (err: any) {
+    console.error('Register error:', err);
+    return res.status(500).json({ error: err.message || 'Registration failed due to server error.' });
+  }
 });
 
 app.post('/api/auth/verify-registration-otp', (req: Request, res: Response) => {
-  const { email, otp } = req.body;
+  const { email, otp } = req.body || {};
   if (!email || !otp) {
     return res.status(400).json({ error: 'Email and verification code are required.' });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = String(email).trim().toLowerCase();
   const pending = pendingRegistrations.get(cleanEmail);
 
   if (!pending) {
@@ -205,16 +245,15 @@ app.post('/api/auth/verify-registration-otp', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
   }
 
-  if (pending.otp !== otp.trim()) {
+  if (pending.otp !== String(otp).trim()) {
     return res.status(400).json({ error: 'Invalid verification code. Please check and try again.' });
   }
 
-  // Create transporter user
-  const newTransporterId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  const newTransporterId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date();
-  const trialExpiry = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days trial
+  const trialExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  const newUser = db.createUser({
+  const userRecord = {
     id: newTransporterId,
     email: pending.data.email,
     mobile: pending.data.mobile,
@@ -225,13 +264,13 @@ app.post('/api/auth/verify-registration-otp', (req: Request, res: Response) => {
     ntn: '',
     strn: '',
     phone: pending.data.mobile,
-    role: 'transporter',
-    accountStatus: 'active',
+    role: 'transporter' as const,
+    accountStatus: 'pending' as const,
     createdAt: now.toISOString(),
     passwordHash: pending.data.passwordHash,
     subscription: {
-      plan: 'trial',
-      status: 'active',
+      plan: 'trial' as const,
+      status: 'pending_approval' as const,
       startDate: now.toISOString().split('T')[0],
       expiryDate: trialExpiry.toISOString().split('T')[0],
       price: 0,
@@ -242,13 +281,18 @@ app.post('/api/auth/verify-registration-otp', (req: Request, res: Response) => {
       invoicePrefix: 'INV-26-',
       currency: 'PKR',
     },
-  });
+  };
 
+  const newUser = db.createUser(userRecord);
   pendingRegistrations.delete(cleanEmail);
 
-  db.logAudit(newUser.id, newUser.email, 'TRANSPORTER_REGISTERED', `New transporter account verified & activated for ${newUser.companyName}`);
+  db.logAudit(newUser.id, newUser.email, 'TRANSPORTER_REGISTERED', `New transporter account registered for ${newUser.companyName} (Pending Admin Approval)`);
 
-  const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign(
+    { id: newUser.id, role: newUser.role, email: newUser.email, userSnapshot: userRecord },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
   return res.status(201).json({ user: newUser, token });
 });
 
@@ -288,34 +332,36 @@ app.post('/api/auth/resend-registration-otp', async (req: Request, res: Response
 });
 
 app.post('/api/auth/login', (req: Request, res: Response) => {
-  const { identifier, password } = req.body;
+  try {
+    const { identifier, password } = req.body || {};
 
-  if (!identifier || !password) {
-    return res.status(400).json({ error: 'Please enter your email or mobile and password.' });
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Please enter your email or mobile and password.' });
+    }
+
+    const user = db.findUserByEmailOrMobile(String(identifier).trim());
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials. User not found.' });
+    }
+
+    const match = bcrypt.compareSync(password, user.passwordHash);
+    if (!match) {
+      return res.status(401).json({ error: 'Invalid credentials. Incorrect password.' });
+    }
+
+    db.logAudit(user.id, user.email, 'USER_LOGIN', `User ${user.fullName} (${user.accountStatus}) signed in.`);
+
+    const { passwordHash: _, ...safeUser } = user;
+    const token = jwt.sign(
+      { id: user.id, role: user.role, email: user.email, userSnapshot: user },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    return res.json({ user: safeUser, token });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    return res.status(500).json({ error: err.message || 'Login failed due to server error.' });
   }
-
-  const user = db.findUserByEmailOrMobile(identifier);
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials. User not found.' });
-  }
-
-  const match = bcrypt.compareSync(password, user.passwordHash);
-  if (!match) {
-    return res.status(401).json({ error: 'Invalid credentials. Incorrect password.' });
-  }
-
-  if (user.accountStatus === 'suspended') {
-    return res.status(403).json({ error: 'Account suspended. Please contact Super Admin.' });
-  }
-  if (user.accountStatus === 'deactivated') {
-    return res.status(403).json({ error: 'Account deactivated. Please contact Super Admin.' });
-  }
-
-  db.logAudit(user.id, user.email, 'USER_LOGIN', `User ${user.fullName} logged in successfully.`);
-
-  const { passwordHash: _, ...safeUser } = user;
-  const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-  return res.json({ user: safeUser, token });
 });
 
 app.get('/api/auth/me', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
@@ -1026,12 +1072,24 @@ app.get('/api/admin/transporters', authenticateToken, requireAdmin, (_req: Authe
 });
 
 app.post('/api/admin/transporters/:id/status', authenticateToken, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
-  const { status } = req.body;
-  if (!['active', 'suspended', 'deactivated'].includes(status)) {
+  const { status } = req.body || {};
+  if (!['pending', 'active', 'suspended', 'deactivated'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status value.' });
   }
 
-  const updated = db.updateUser(req.params.id, { accountStatus: status });
+  const existingUser = db.findUserById(req.params.id);
+  if (!existingUser) return res.status(404).json({ error: 'Transporter not found.' });
+
+  const updates: Partial<UserProfile> = { accountStatus: status };
+  if (status === 'active' && existingUser.subscription?.status === 'pending_approval') {
+    updates.subscription = {
+      ...existingUser.subscription,
+      status: 'active',
+      approvedBy: req.user!.fullName,
+    };
+  }
+
+  const updated = db.updateUser(req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Transporter not found.' });
 
   db.logAudit(req.user!.id, req.user!.email, 'ADMIN_STATUS_CHANGED', `Changed status of ${updated.companyName} to ${status}`);
@@ -1039,7 +1097,7 @@ app.post('/api/admin/transporters/:id/status', authenticateToken, requireAdmin, 
 });
 
 app.post('/api/admin/transporters/:id/subscription', authenticateToken, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
-  const { plan, status, durationMonths } = req.body;
+  const { plan, status, durationMonths } = req.body || {};
   const user = db.findUserById(req.params.id);
   if (!user) return res.status(404).json({ error: 'Transporter not found.' });
 
@@ -1047,10 +1105,12 @@ app.post('/api/admin/transporters/:id/subscription', authenticateToken, requireA
   const months = durationMonths ? parseInt(durationMonths, 10) : (plan === 'yearly' ? 12 : 1);
   const expiry = new Date(now.getTime() + months * 30 * 24 * 60 * 60 * 1000);
 
+  const nextSubStatus = status || 'active';
   const updated = db.updateUser(req.params.id, {
+    accountStatus: nextSubStatus === 'active' ? 'active' : user.accountStatus,
     subscription: {
       plan: plan || user.subscription.plan,
-      status: status || 'active',
+      status: nextSubStatus,
       startDate: now.toISOString().split('T')[0],
       expiryDate: expiry.toISOString().split('T')[0],
       price: user.subscription.price,
@@ -1182,20 +1242,30 @@ app.post('/api/admin/smtp/test', authenticateToken, requireAdmin, async (req: Au
 });
 
 // ---------------- VITE MIDDLEWARE / STATIC ASSETS ----------------
-// Production / Serverless Export
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+if (!process.env.VERCEL) {
   startServer().catch((err) => {
     console.error('Fatal server startup failure:', err);
   });
 }
 
 async function startServer() {
-  const { createServer: createViteServer } = await import('vite');
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-  app.use(vite.middlewares);
+  if (process.env.NODE_ENV !== 'production') {
+    const vitePkg = 'vite';
+    const { createServer: createViteServer } = await import(vitePkg);
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.resolve(process.cwd(), 'dist');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Fleet Bill 3.0 Server running at http://localhost:${PORT}`);

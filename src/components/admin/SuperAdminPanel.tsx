@@ -360,6 +360,23 @@ export const SuperAdminPanel: React.FC = () => {
       {/* TAB 1: Transporters Directory */}
       {activeTab === 'transporters' && (
         <div className="space-y-4">
+          {/* Pending Approvals Highlight Banner */}
+          {transporters.some((t) => t.role !== 'admin' && t.accountStatus === 'pending') && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-start gap-3">
+                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-xs sm:text-sm font-bold text-amber-950">
+                    New Transporter Account(s) Waiting for Your Approval ({transporters.filter((t) => t.role !== 'admin' && t.accountStatus === 'pending').length})
+                  </h3>
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    Click <strong>Approve &amp; Enable</strong> below to grant them access to the Fleet Bill 3.0 billing portal.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-4">
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -381,13 +398,13 @@ export const SuperAdminPanel: React.FC = () => {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3">Company & Owner</th>
+                    <th className="px-4 py-3">Company &amp; Owner</th>
                     <th className="px-4 py-3">Contact</th>
                     <th className="px-4 py-3">Account Status</th>
                     <th className="px-4 py-3">Subscription</th>
                     <th className="px-4 py-3">Expiry Date</th>
                     <th className="px-4 py-3 text-center">Invoices</th>
-                    <th className="px-4 py-3 text-right">Admin Actions</th>
+                    <th className="px-4 py-3 text-right">Admin Access Controls</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -411,15 +428,19 @@ export const SuperAdminPanel: React.FC = () => {
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold capitalize ${
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                               t.accountStatus === 'active'
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : t.accountStatus === 'suspended'
-                                ? 'bg-amber-100 text-amber-800'
+                                : t.accountStatus === 'pending'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
                                 : 'bg-rose-100 text-rose-800'
                             }`}
                           >
-                            {t.accountStatus}
+                            {t.accountStatus === 'active'
+                              ? 'Approved & Active'
+                              : t.accountStatus === 'pending'
+                              ? 'Waiting Approval'
+                              : 'Disabled'}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -447,36 +468,53 @@ export const SuperAdminPanel: React.FC = () => {
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {!isSuper && (
                             <div className="flex items-center justify-end gap-1.5">
-                              {/* Subscription approve / renew button */}
+                              {/* Primary Approve / Disable / Continue Controls */}
+                              {t.accountStatus === 'pending' ? (
+                                <>
+                                  <button
+                                    onClick={() => handleUpdateStatus(t.id, 'active')}
+                                    className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors shadow-xs cursor-pointer"
+                                    title="Approve Transporter & Enable System Access"
+                                  >
+                                    Approve &amp; Enable
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateStatus(t.id, 'suspended')}
+                                    className="px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md transition-colors cursor-pointer"
+                                    title="Reject / Disable Transporter"
+                                  >
+                                    Disable
+                                  </button>
+                                </>
+                              ) : t.accountStatus === 'active' ? (
+                                <button
+                                  onClick={() => handleUpdateStatus(t.id, 'suspended')}
+                                  className="px-2.5 py-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
+                                  title="Disable Transporter System Access"
+                                >
+                                  Disable Access
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleUpdateStatus(t.id, 'active')}
+                                  className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-md transition-colors shadow-xs cursor-pointer"
+                                  title="Continue / Re-Enable Transporter System Access"
+                                >
+                                  Continue / Enable
+                                </button>
+                              )}
+
+                              {/* Subscription plan / validity button */}
                               <button
                                 onClick={() => {
                                   setSelectedTransporter(t);
                                   setShowRenewModal(true);
                                 }}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-                                title="Approve Payment or Extend License"
+                                className="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors cursor-pointer"
+                                title="Set Plan Duration & Validity"
                               >
-                                Renew / Approve
+                                Plan / Validity
                               </button>
-
-                              {/* Toggle active / suspend */}
-                              {t.accountStatus === 'active' ? (
-                                <button
-                                  onClick={() => handleUpdateStatus(t.id, 'suspended')}
-                                  className="px-2 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors"
-                                  title="Suspend Transporter"
-                                >
-                                  Suspend
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleUpdateStatus(t.id, 'active')}
-                                  className="px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors"
-                                  title="Activate Account"
-                                >
-                                  Activate
-                                </button>
-                              )}
 
                               {/* Delete account */}
                               <button
@@ -484,7 +522,7 @@ export const SuperAdminPanel: React.FC = () => {
                                   setSelectedTransporter(t);
                                   setShowDeleteModal(true);
                                 }}
-                                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
                                 title="Delete Transporter Account"
                               >
                                 <Trash2 className="w-4 h-4" />

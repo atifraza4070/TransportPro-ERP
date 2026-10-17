@@ -1,5 +1,5 @@
 export type UserRole = 'transporter' | 'admin';
-export type AccountStatus = 'active' | 'suspended' | 'deactivated';
+export type AccountStatus = 'pending' | 'active' | 'suspended' | 'deactivated';
 export type SubscriptionPlan = 'monthly' | 'yearly' | 'trial';
 export type SubscriptionStatus = 'active' | 'pending_approval' | 'expired';
 
